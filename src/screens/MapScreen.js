@@ -3,93 +3,13 @@ import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { photoApi } from '../services/api';
-import { LEAFLET_JS, LEAFLET_CSS } from '../lib/leaflet-bundle';
-
-const THUMB_BASE = 'http://116.32.135.243/photo_share/photos';
-
-function buildHTML(lat, lng, photos) {
-  const photosJson = JSON.stringify(photos);
-  return `<!DOCTYPE html>
-<html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>${LEAFLET_CSS}
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:100%;height:100%;overflow:hidden}
-  #map{position:absolute;top:0;left:0;right:0;bottom:0}
-  .pm img{width:44px;height:44px;border-radius:50%;border:2.5px solid #3a7d44;object-fit:cover;background:#c8e6c9;display:block}
-  .pp{text-align:center;min-width:150px}
-  .pp img{width:120px;height:120px;border-radius:8px;object-fit:cover;background:#c8e6c9}
-  .pp .ti{font-weight:700;margin:5px 0 2px;font-size:13px}
-  .pp .su{font-size:11px;color:#666;margin-bottom:6px}
-  .pp .bt{background:#3a7d44;color:#fff;border:none;border-radius:6px;padding:5px 16px;font-size:12px;cursor:pointer}
-</style>
-</head><body>
-<div id="map"></div>
-<script>${LEAFLET_JS}</script>
-<script>
-(function(){
-  var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© OpenStreetMap contributors',maxZoom:19
-  }).addTo(map);
-
-  L.circleMarker([${lat},${lng}],{
-    radius:10,fillColor:'#4285F4',color:'#fff',weight:3,fillOpacity:0.95
-  }).addTo(map).bindPopup('내 위치');
-
-  setTimeout(function(){ map.invalidateSize(); },300);
-
-  var layer=L.layerGroup().addTo(map);
-
-  function tap(id){
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'tap',id:id}));
-  }
-
-  function setMarkers(photos){
-    layer.clearLayers();
-    photos.forEach(function(p){
-      var icon=L.divIcon({
-        className:'pm',
-        html:'<img src="${THUMB_BASE}/'+p.id+'/thumbnail"/>',
-        iconSize:[44,44],iconAnchor:[22,22],popupAnchor:[0,-26]
-      });
-      L.marker([p.lat,p.lng],{icon:icon}).addTo(layer).bindPopup(
-        '<div class="pp">'+
-        '<img src="${THUMB_BASE}/'+p.id+'/thumbnail"/>'+
-        '<div class="ti">📷 '+p.owner_nickname+'</div>'+
-        '<div class="su">❤️ '+p.like_count+'  📡 '+p.node_count+' nodes</div>'+
-        '<button class="bt" onclick="tap(\''+p.id+'\')">탭하여 보기</button>'+
-        '</div>'
-      );
-    });
-  }
-
-  setMarkers(${photosJson});
-
-  var mt=null;
-  map.on('moveend',function(){
-    clearTimeout(mt);
-    mt=setTimeout(function(){
-      var c=map.getCenter(),b=map.getBounds();
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        type:'move',lat:c.lat,lng:c.lng,
-        latDelta:b.getNorth()-b.getSouth()
-      }));
-    },700);
-  });
-
-  window.updateMarkers=function(json){setMarkers(JSON.parse(json));};
-})();
-</script>
-</body></html>`;
-}
 
 export default function MapScreen({ navigation }) {
   const webviewRef = useRef(null);
   const [initData, setInitData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [webviewReady, setWebviewReady] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -111,6 +31,14 @@ export default function MapScreen({ navigation }) {
       }
     })();
   }, []);
+
+  // 위치+사진 데이터와 WebView가 모두 준비되면 지도 초기화
+  useEffect(() => {
+    if (webviewReady && initData) {
+      const js = `window.initMap(${initData.lat}, ${initData.lng}, ${JSON.stringify(initData.photos)});true;`;
+      webviewRef.current?.injectJavaScript(js);
+    }
+  }, [webviewReady, initData]);
 
   const onMessage = async (event) => {
     try {
@@ -141,11 +69,15 @@ export default function MapScreen({ navigation }) {
     <View style={styles.container}>
       <WebView
         ref={webviewRef}
-        source={{ html: buildHTML(initData.lat, initData.lng, initData.photos) }}
+        source={{ uri: 'file:///android_asset/map.html' }}
+        onLoad={() => setWebviewReady(true)}
         onMessage={onMessage}
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}
+        allowFileAccess
+        allowUniversalAccessFromFileURLs
+        allowFileAccessFromFileURLs
         mixedContentMode="always"
         style={styles.map}
       />
