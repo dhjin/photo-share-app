@@ -3,6 +3,7 @@ import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { photoApi } from '../services/api';
+import { LEAFLET_JS, LEAFLET_CSS } from '../lib/leaflet-bundle';
 
 const THUMB_BASE = 'http://116.32.135.243/photo_share/photos';
 
@@ -11,8 +12,7 @@ function buildHTML(lat, lng, photos) {
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
+<style>${LEAFLET_CSS}
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;overflow:hidden}
   #map{position:absolute;top:0;left:0;right:0;bottom:0}
@@ -22,19 +22,12 @@ function buildHTML(lat, lng, photos) {
   .pp .ti{font-weight:700;margin:5px 0 2px;font-size:13px}
   .pp .su{font-size:11px;color:#666;margin-bottom:6px}
   .pp .bt{background:#3a7d44;color:#fff;border:none;border-radius:6px;padding:5px 16px;font-size:12px;cursor:pointer}
-  #err{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#c0392b;font-size:14px;text-align:center}
 </style>
 </head><body>
 <div id="map"></div>
-<div id="err">지도를 불러올 수 없습니다.<br/>인터넷 연결을 확인하세요.</div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>${LEAFLET_JS}</script>
 <script>
 (function(){
-  if(typeof L==='undefined'){
-    document.getElementById('err').style.display='block';
-    return;
-  }
-
   var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
@@ -45,8 +38,7 @@ function buildHTML(lat, lng, photos) {
     radius:10,fillColor:'#4285F4',color:'#fff',weight:3,fillOpacity:0.95
   }).addTo(map).bindPopup('내 위치');
 
-  // 컨테이너 크기 강제 갱신 (WebView 렌더링 완료 후)
-  setTimeout(function(){ map.invalidateSize(); }, 300);
+  setTimeout(function(){ map.invalidateSize(); },300);
 
   var layer=L.layerGroup().addTo(map);
 
@@ -149,7 +141,7 @@ export default function MapScreen({ navigation }) {
     <View style={styles.container}>
       <WebView
         ref={webviewRef}
-        source={{ html: buildHTML(initData.lat, initData.lng, initData.photos), baseUrl: 'http://localhost' }}
+        source={{ html: buildHTML(initData.lat, initData.lng, initData.photos) }}
         onMessage={onMessage}
         javaScriptEnabled
         domStorageEnabled
