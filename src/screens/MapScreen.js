@@ -1,16 +1,88 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Image } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { photoApi } from '../services/api';
 
+const THUMB_BASE = 'http://116.32.135.243/photo_share/photos';
+
+function buildHTML(lat, lng, photos) {
+  const photosJson = JSON.stringify(photos);
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body,#map{width:100%;height:100vh;background:#e8f5e9}
+  .pm img{width:44px;height:44px;border-radius:50%;border:2.5px solid #3a7d44;object-fit:cover;background:#c8e6c9;display:block}
+  .pp{text-align:center;min-width:150px}
+  .pp img{width:120px;height:120px;border-radius:8px;object-fit:cover;background:#c8e6c9}
+  .pp .ti{font-weight:700;margin:5px 0 2px;font-size:13px}
+  .pp .su{font-size:11px;color:#666;margin-bottom:6px}
+  .pp .bt{background:#3a7d44;color:#fff;border:none;border-radius:6px;padding:5px 16px;font-size:12px;cursor:pointer}
+</style>
+</head><body><div id="map"></div>
+<script>
+var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OpenStreetMap contributors',maxZoom:19
+}).addTo(map);
+
+L.circleMarker([${lat},${lng}],{
+  radius:10,fillColor:'#4285F4',color:'#fff',weight:3,fillOpacity:0.95
+}).addTo(map).bindPopup('내 위치');
+
+var layer=L.layerGroup().addTo(map);
+
+function tap(id){
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'tap',id:id}));
+}
+
+function setMarkers(photos){
+  layer.clearLayers();
+  photos.forEach(function(p){
+    var icon=L.divIcon({
+      className:'pm',
+      html:'<img src="${THUMB_BASE}/'+p.id+'/thumbnail" onerror="this.src=\'\'"/>',
+      iconSize:[44,44],iconAnchor:[22,22],popupAnchor:[0,-26]
+    });
+    L.marker([p.lat,p.lng],{icon:icon}).addTo(layer).bindPopup(
+      '<div class="pp">'+
+      '<img src="${THUMB_BASE}/'+p.id+'/thumbnail"/>'+
+      '<div class="ti">📷 '+p.owner_nickname+'</div>'+
+      '<div class="su">❤️ '+p.like_count+'  📡 '+p.node_count+' nodes</div>'+
+      '<button class="bt" onclick="tap(\''+p.id+'\')">탭하여 보기</button>'+
+      '</div>'
+    );
+  });
+}
+
+setMarkers(${photosJson});
+
+var mt=null;
+map.on('moveend',function(){
+  clearTimeout(mt);
+  mt=setTimeout(function(){
+    var c=map.getCenter(),b=map.getBounds();
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type:'move',lat:c.lat,lng:c.lng,
+      latDelta:b.getNorth()-b.getSouth()
+    }));
+  },700);
+});
+
+window.updateMarkers=function(json){setMarkers(JSON.parse(json));};
+</script>
+</body></html>`;
+}
+
 export default function MapScreen({ navigation }) {
-  const [location, setLocation] = useState(null);
-  const [photos, setPhotos] = useState([]);
+  const webviewRef = useRef(null);
+  const [initData, setInitData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [region, setRegion] = useState(null);
-  const debounceTimer = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -20,21 +92,12 @@ export default function MapScreen({ navigation }) {
           setError('위치 권한이 필요합니다');
           return;
         }
-
         const loc = await Location.getCurrentPositionAsync({});
-        const coords = loc.coords;
-        setLocation(coords);
-        setRegion({
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        });
-
-        const res = await photoApi.nearby(coords.latitude, coords.longitude, 30);
-        setPhotos(res.data?.photos ?? []);
+        const { latitude, longitude } = loc.coords;
+        const res = await photoApi.nearby(latitude, longitude, 30);
+        setInitData({ lat: latitude, lng: longitude, photos: res.data?.photos ?? [] });
       } catch (e) {
-        console.error('[MapScreen] init error', e);
+        console.error('[MapScreen]', e);
         setError('지도를 불러오는 중 오류가 발생했습니다');
       } finally {
         setLoading(false);
@@ -42,67 +105,43 @@ export default function MapScreen({ navigation }) {
     })();
   }, []);
 
-  const onRegionChangeComplete = (newRegion) => {
-    setRegion(newRegion);
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(async () => {
-      try {
-        const radiusKm = (newRegion.latitudeDelta * 111) / 2;
-        const res = await photoApi.nearby(
-          newRegion.latitude,
-          newRegion.longitude,
-          Math.min(radiusKm, 50),
+  const onMessage = async (event) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'tap') {
+        navigation.navigate('PhotoDetail', { photoId: msg.id });
+      } else if (msg.type === 'move') {
+        const radiusKm = (msg.latDelta * 111) / 2;
+        const res = await photoApi.nearby(msg.lat, msg.lng, Math.min(radiusKm, 50));
+        const photos = res.data?.photos ?? [];
+        webviewRef.current?.injectJavaScript(
+          `window.updateMarkers(${JSON.stringify(JSON.stringify(photos))});true;`
         );
-        setPhotos(res.data?.photos ?? []);
-      } catch (e) {
-        console.error('[MapScreen] region fetch error', e);
       }
-    }, 600);
+    } catch (e) {
+      console.error('[MapScreen] onMessage error', e);
+    }
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#3a7d44" /></View>;
-  if (error) return <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>;
-  if (!location) return <View style={styles.center}><Text>위치 권한이 필요합니다</Text></View>;
+  if (loading) {
+    return <View style={styles.center}><ActivityIndicator size="large" color="#3a7d44" /></View>;
+  }
+  if (error) {
+    return <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>;
+  }
 
   return (
     <View style={styles.container}>
-      <MapView
+      <WebView
+        ref={webviewRef}
+        source={{ html: buildHTML(initData.lat, initData.lng, initData.photos), baseUrl: 'http://localhost' }}
+        onMessage={onMessage}
+        javaScriptEnabled
+        domStorageEnabled
+        originWhitelist={['*']}
+        mixedContentMode="always"
         style={styles.map}
-        initialRegion={region}
-        onRegionChangeComplete={onRegionChangeComplete}
-        showsUserLocation
-        showsMyLocationButton
-      >
-        {photos.map((photo) => (
-          <Marker
-            key={photo.id}
-            coordinate={{ latitude: photo.lat, longitude: photo.lng }}
-            title={photo.owner_nickname}
-          >
-            <View style={styles.markerContainer}>
-              <Image
-                source={{ uri: photoApi.thumbnailUrl(photo.id) }}
-                style={styles.markerImage}
-                defaultSource={require('../../assets/icon.png')}
-              />
-              <View style={styles.markerBadge}>
-                <Text style={styles.markerBadgeText}>📡{photo.node_count}</Text>
-              </View>
-            </View>
-            <Callout onPress={() => navigation.navigate('PhotoDetail', { photoId: photo.id })}>
-              <View style={styles.callout}>
-                <Text style={styles.calloutTitle}>📷 {photo.owner_nickname}</Text>
-                <Text style={styles.calloutSub}>❤️ {photo.like_count}  📡 {photo.node_count} nodes</Text>
-                <Text style={styles.calloutLink}>탭하여 보기</Text>
-              </View>
-            </Callout>
-          </Marker>
-        ))}
-      </MapView>
-
-      <View style={styles.legend}>
-        <Text style={styles.legendText}>📡 = 캐시 노드 수</Text>
-      </View>
+      />
     </View>
   );
 }
@@ -112,14 +151,4 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   errorText: { color: '#c0392b', fontSize: 15, textAlign: 'center' },
   map: { flex: 1 },
-  markerContainer: { alignItems: 'center' },
-  markerImage: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#3a7d44' },
-  markerBadge: { backgroundColor: '#3a7d44', borderRadius: 8, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
-  markerBadgeText: { color: '#fff', fontSize: 10, fontWeight: '600' },
-  callout: { width: 160, padding: 8 },
-  calloutTitle: { fontWeight: '700', marginBottom: 4 },
-  calloutSub: { fontSize: 12, color: '#555', marginBottom: 4 },
-  calloutLink: { fontSize: 12, color: '#3a7d44', fontWeight: '600' },
-  legend: { position: 'absolute', bottom: 20, left: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 8, padding: 8 },
-  legendText: { fontSize: 12, color: '#333' },
 });
