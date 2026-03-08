@@ -17,7 +17,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Used to take photos to share on the platform.",
         "NSLocationWhenInUseUsageDescription": "Used to tag photos with location and show nearby photos.",
-        "NSPhotoLibraryUsageDescription": "Used to pick photos from your library."
+        "NSPhotoLibraryUsageDescription": "Used to pick photos from your library.",
+        "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save photos"
       }
     },
     "android": {
@@ -26,12 +27,14 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.dhjin.photoshare",
+      "usesCleartextTraffic": true,
       "permissions": [
-        "CAMERA",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -42,6 +45,12 @@
       "expo-location",
       "expo-image-picker",
       "expo-media-library"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "01f0330c-d4c3-4907-bb06-a4d1065793da"
+      }
+    },
+    "owner": "dhjin"
   }
 }
