@@ -16,8 +16,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
 import { configApi, nodeApi, photoApi } from './api';
 
-const SIGNALING_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 const CHUNK_SIZE = 16384; // 16 KB
+
+// Socket.io needs origin + explicit path when API is mounted under a subpath
+const _apiUrl = new URL(API_BASE);
+const SOCKET_ORIGIN = _apiUrl.origin;
+const SOCKET_PATH = _apiUrl.pathname !== '/' ? `${_apiUrl.pathname}/socket.io` : '/socket.io';
 
 let socket = null;
 let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -30,7 +35,7 @@ async function connect(userId) {
     iceServers = res.data.iceServers;
   } catch {}
 
-  socket = io(SIGNALING_URL, { auth: { userId }, transports: ['websocket'] });
+  socket = io(SOCKET_ORIGIN, { auth: { userId }, transports: ['websocket'], path: SOCKET_PATH });
 
   socket.on('connect', () => console.log('[P2P] Signaling connected'));
   socket.on('disconnect', () => console.log('[P2P] Signaling disconnected'));
