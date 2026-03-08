@@ -26,7 +26,10 @@ export default function AuthScreen() {
         await register(email, password, nickname);
       }
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Something went wrong');
+      const serverError = err.response?.data?.error;
+      const validationErrors = err.response?.data?.errors?.map(e => e.msg).join('\n');
+      const networkError = err.message;
+      Alert.alert('Error', serverError || validationErrors || networkError || 'Something went wrong');
     } finally {
       setLoading(false);
     }
