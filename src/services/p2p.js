@@ -13,7 +13,10 @@
 
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
+// react-native-webrtc: stub for initial build (P2P feature pending)
+const RTCPeerConnection = null;
+const RTCSessionDescription = null;
+const RTCIceCandidate = null;
 import { configApi, nodeApi, photoApi } from './api';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
