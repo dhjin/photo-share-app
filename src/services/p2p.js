@@ -19,7 +19,7 @@ const RTCSessionDescription = null;
 const RTCIceCandidate = null;
 import { configApi, nodeApi, photoApi } from './api';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_BASE = 'http://116.32.135.243/photo_share';
 const CHUNK_SIZE = 16384; // 16 KB
 
 // Socket.io needs origin + explicit path when API is mounted under a subpath
