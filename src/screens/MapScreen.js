@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import MapView, { Marker, Callout } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { photoApi } from '../services/api';
@@ -8,37 +8,60 @@ export default function MapScreen({ navigation }) {
   const [location, setLocation] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [region, setRegion] = useState(null);
+  const debounceTimer = useRef(null);
 
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return setLoading(false);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setError('위치 권한이 필요합니다');
+          return;
+        }
 
-      const loc = await Location.getCurrentPositionAsync({});
-      const coords = loc.coords;
-      setLocation(coords);
-      setRegion({
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      });
+        const loc = await Location.getCurrentPositionAsync({});
+        const coords = loc.coords;
+        setLocation(coords);
+        setRegion({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        });
 
-      const res = await photoApi.nearby(coords.latitude, coords.longitude, 30);
-      setPhotos(res.data.photos);
-      setLoading(false);
+        const res = await photoApi.nearby(coords.latitude, coords.longitude, 30);
+        setPhotos(res.data?.photos ?? []);
+      } catch (e) {
+        console.error('[MapScreen] init error', e);
+        setError('지도를 불러오는 중 오류가 발생했습니다');
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
-  const onRegionChangeComplete = async (newRegion) => {
+  const onRegionChangeComplete = (newRegion) => {
     setRegion(newRegion);
-    const radiusKm = (newRegion.latitudeDelta * 111) / 2;
-    const res = await photoApi.nearby(newRegion.latitude, newRegion.longitude, Math.min(radiusKm, 50));
-    setPhotos(res.data.photos);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const radiusKm = (newRegion.latitudeDelta * 111) / 2;
+        const res = await photoApi.nearby(
+          newRegion.latitude,
+          newRegion.longitude,
+          Math.min(radiusKm, 50),
+        );
+        setPhotos(res.data?.photos ?? []);
+      } catch (e) {
+        console.error('[MapScreen] region fetch error', e);
+      }
+    }, 600);
   };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#3a7d44" /></View>;
+  if (error) return <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>;
   if (!location) return <View style={styles.center}><Text>위치 권한이 필요합니다</Text></View>;
 
   return (
@@ -60,6 +83,7 @@ export default function MapScreen({ navigation }) {
               <Image
                 source={{ uri: photoApi.thumbnailUrl(photo.id) }}
                 style={styles.markerImage}
+                defaultSource={require('../../assets/icon.png')}
               />
               <View style={styles.markerBadge}>
                 <Text style={styles.markerBadgeText}>📡{photo.node_count}</Text>
@@ -85,7 +109,8 @@ export default function MapScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  errorText: { color: '#c0392b', fontSize: 15, textAlign: 'center' },
   map: { flex: 1 },
   markerContainer: { alignItems: 'center' },
   markerImage: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#3a7d44' },
