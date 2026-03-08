@@ -12,68 +12,83 @@ function buildHTML(lat, lng, photos) {
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body,#map{width:100%;height:100vh;background:#e8f5e9}
+  html,body{width:100%;height:100%;overflow:hidden}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0}
   .pm img{width:44px;height:44px;border-radius:50%;border:2.5px solid #3a7d44;object-fit:cover;background:#c8e6c9;display:block}
   .pp{text-align:center;min-width:150px}
   .pp img{width:120px;height:120px;border-radius:8px;object-fit:cover;background:#c8e6c9}
   .pp .ti{font-weight:700;margin:5px 0 2px;font-size:13px}
   .pp .su{font-size:11px;color:#666;margin-bottom:6px}
   .pp .bt{background:#3a7d44;color:#fff;border:none;border-radius:6px;padding:5px 16px;font-size:12px;cursor:pointer}
+  #err{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#c0392b;font-size:14px;text-align:center}
 </style>
-</head><body><div id="map"></div>
+</head><body>
+<div id="map"></div>
+<div id="err">지도를 불러올 수 없습니다.<br/>인터넷 연결을 확인하세요.</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'© OpenStreetMap contributors',maxZoom:19
-}).addTo(map);
+(function(){
+  if(typeof L==='undefined'){
+    document.getElementById('err').style.display='block';
+    return;
+  }
 
-L.circleMarker([${lat},${lng}],{
-  radius:10,fillColor:'#4285F4',color:'#fff',weight:3,fillOpacity:0.95
-}).addTo(map).bindPopup('내 위치');
+  var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
 
-var layer=L.layerGroup().addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap contributors',maxZoom:19
+  }).addTo(map);
 
-function tap(id){
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'tap',id:id}));
-}
+  L.circleMarker([${lat},${lng}],{
+    radius:10,fillColor:'#4285F4',color:'#fff',weight:3,fillOpacity:0.95
+  }).addTo(map).bindPopup('내 위치');
 
-function setMarkers(photos){
-  layer.clearLayers();
-  photos.forEach(function(p){
-    var icon=L.divIcon({
-      className:'pm',
-      html:'<img src="${THUMB_BASE}/'+p.id+'/thumbnail" onerror="this.src=\'\'"/>',
-      iconSize:[44,44],iconAnchor:[22,22],popupAnchor:[0,-26]
+  // 컨테이너 크기 강제 갱신 (WebView 렌더링 완료 후)
+  setTimeout(function(){ map.invalidateSize(); }, 300);
+
+  var layer=L.layerGroup().addTo(map);
+
+  function tap(id){
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'tap',id:id}));
+  }
+
+  function setMarkers(photos){
+    layer.clearLayers();
+    photos.forEach(function(p){
+      var icon=L.divIcon({
+        className:'pm',
+        html:'<img src="${THUMB_BASE}/'+p.id+'/thumbnail"/>',
+        iconSize:[44,44],iconAnchor:[22,22],popupAnchor:[0,-26]
+      });
+      L.marker([p.lat,p.lng],{icon:icon}).addTo(layer).bindPopup(
+        '<div class="pp">'+
+        '<img src="${THUMB_BASE}/'+p.id+'/thumbnail"/>'+
+        '<div class="ti">📷 '+p.owner_nickname+'</div>'+
+        '<div class="su">❤️ '+p.like_count+'  📡 '+p.node_count+' nodes</div>'+
+        '<button class="bt" onclick="tap(\''+p.id+'\')">탭하여 보기</button>'+
+        '</div>'
+      );
     });
-    L.marker([p.lat,p.lng],{icon:icon}).addTo(layer).bindPopup(
-      '<div class="pp">'+
-      '<img src="${THUMB_BASE}/'+p.id+'/thumbnail"/>'+
-      '<div class="ti">📷 '+p.owner_nickname+'</div>'+
-      '<div class="su">❤️ '+p.like_count+'  📡 '+p.node_count+' nodes</div>'+
-      '<button class="bt" onclick="tap(\''+p.id+'\')">탭하여 보기</button>'+
-      '</div>'
-    );
+  }
+
+  setMarkers(${photosJson});
+
+  var mt=null;
+  map.on('moveend',function(){
+    clearTimeout(mt);
+    mt=setTimeout(function(){
+      var c=map.getCenter(),b=map.getBounds();
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type:'move',lat:c.lat,lng:c.lng,
+        latDelta:b.getNorth()-b.getSouth()
+      }));
+    },700);
   });
-}
 
-setMarkers(${photosJson});
-
-var mt=null;
-map.on('moveend',function(){
-  clearTimeout(mt);
-  mt=setTimeout(function(){
-    var c=map.getCenter(),b=map.getBounds();
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type:'move',lat:c.lat,lng:c.lng,
-      latDelta:b.getNorth()-b.getSouth()
-    }));
-  },700);
-});
-
-window.updateMarkers=function(json){setMarkers(JSON.parse(json));};
+  window.updateMarkers=function(json){setMarkers(JSON.parse(json));};
+})();
 </script>
 </body></html>`;
 }
